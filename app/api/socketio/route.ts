@@ -1,38 +1,33 @@
-import { Server as SocketIOServer } from 'socket.io';
 import { NextResponse } from 'next/server';
-import type { NextApiRequest } from 'next';
-import type { Server as HTTPServer } from 'http';
-import type { Socket as NetSocket } from 'net';
+import { WebSocketServer } from 'ws';
 
-interface SocketServer extends HTTPServer {
-  io?: SocketIOServer;
-}
+let wss: WebSocketServer;
 
-interface SocketWithIO extends NetSocket {
-  server: SocketServer;
-}
+export const runtime = 'nodejs';
 
-interface NextApiResponseWithSocket extends NextApiRequest {
-  socket: SocketWithIO;
-}
+export function GET() {
+  if (!wss) {
+    wss = new WebSocketServer({ noServer: true });
 
-export const runtime = 'edge';
+    wss.on('connection', (ws) => {
+      console.log('Client connected');
 
-export function GET(req: NextApiResponseWithSocket) {
-  if (req.socket.server.io) {
-    console.log('Socket is already running');
-  } else {
-    console.log('Socket is initializing');
-    const io = new SocketIOServer(req.socket.server as any);
-    req.socket.server.io = io;
+      ws.on('message', (message) => {
+        const data = JSON.parse(message.toString());
+        if (data.type === 'timeUpdate') {
+          wss.clients.forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ type: 'timeUpdate', time: data.time }));
+            }
+          });
+        }
+      });
 
-    io.on('connection', (socket) => {
-      console.log('A client connected');
-      socket.on('timeUpdate', (time: number) => {
-        socket.broadcast.emit('timeUpdate', time);
+      ws.on('close', () => {
+        console.log('Client disconnected');
       });
     });
   }
 
-  return NextResponse.json({ message: 'Socket initialized' }, { status: 200 });
+  return NextResponse.json({ message: 'WebSocket server initialized' });
 }
